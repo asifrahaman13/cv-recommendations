@@ -8,7 +8,7 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 # Load your CV data from cv_data.json
 data = {}
-with open("cv_data.json", "r") as file:
+with open("job_descriptions/cv_data.json", "r") as file:
     data = json.load(file)
 
 # Extract company names and job descriptions
@@ -21,7 +21,7 @@ tokenizer = DistilBertTokenizer.from_pretrained("distilbert-base-uncased")
 model = DistilBertModel.from_pretrained("distilbert-base-uncased").to(device)
 
 # Load job descriptions and extracted CV details from JSON
-with open('extracted_details.json', 'r') as json_file:
+with open('extracted/extracted_details.json', 'r') as json_file:
     cv_details = json.load(json_file)
 
 # Create a list of job descriptions
