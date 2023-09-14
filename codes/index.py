@@ -1,28 +1,179 @@
-import os
+# %%
+# Import the necessary modules and libraries in the code. 
+from datasets import load_dataset
 import json
+import os 
 import torch
 from transformers import DistilBertTokenizer, DistilBertModel
+import pdfplumber
+
+# %%
+# Load the dataset from the huggin face model. 
+dataset = load_dataset("jacob-hugging-face/job-descriptions")
+
+# %%
+# See the output and the data format of the dataset. The data was in the form of Nested Dictionary.
+print(dataset['train'].to_dict())
+
+# %% [markdown]
+# Convert the dictionry data into json format
+
+# %%
+# Function to properly transform the data to later save it into json format. 
+def transform_to_horizontal(data, fields, limit=None):
+
+    # Initialzie list to hold the dataq. 
+    horizontal_data = []
+    
+    # Use teh enumerate method to get the incdex as well as the item. 
+    for idx, item in enumerate(data):
+
+        # Break the loop if it crosses the limit. 
+        if limit is not None and idx >= limit:
+            break
+        # Append the items into the dictionary. 
+        horizontal_item = {field: item[field] for field in fields}
+        # Append the dictionary data as elements of the list. 
+        horizontal_data.append(horizontal_item)
+
+    # Return the list object. 
+    return horizontal_data
+
+# Specify the fields you want to include in the horizontal format
+fields_to_include = ["company_name", "job_description", "position_title", "description_length", "model_response"]
+
+# Transform the data to horizontal format
+horizontal_data = transform_to_horizontal(dataset["train"], fields_to_include, limit=15)
+
+# Saving the horizontal data to a JSON file
+with open("job_descriptions/cv_data.json", "w") as file:
+    # Dump the json data into a file. 
+    json.dump(horizontal_data, file)
+    # Its always a good practice to close the file after the operations are done. 
+    file.close()
+
+
+# %% [markdown]
+# Perform data extraction from the pdf.
+
+# %%
+# Define the path from which you need to extract all the PDFs. 
+PATH="archive/data/data"
+
+# Extract all the directories under the mentioned path using list comprehension method. 
+items = os.listdir(PATH)
+directories = [item for item in items if os.path.isdir(os.path.join(PATH, item))]
+
+print("Directories in the path:")
+
+# Initialize a list which will hold the list of all the categories (basically the names of the directories)
+list_of_categories=[]
+
+for directory in directories:
+    list_of_categories.append(directory)
+    # print(directory)
+print(list_of_categories)
+
+
+# Function to extract category, skills, and education from a PDF
+def extract_details(pdf_path):
+    # Wrap the code in try catch block to avoid any error. 
+    try:
+        with pdfplumber.open(pdf_path) as pdf:
+            # Initialize variables to store extracted details
+            category = None
+            skills = []
+            education = []
+
+            # Iterate through pages in the PDF
+            for page in pdf.pages:
+                text = page.extract_text()
+
+                # Search for patterns in the extracted text
+                if "Category" in text:
+                    category = text.split("Category")[1].strip()
+                if "Skills" in text:
+                    skills = [skill.strip() for skill in text.split("Skills")[1].split(",")]
+                if "Education" in text:
+                    education = [edu.strip() for edu in text.split("Education")[1].split(";")]
+            # Return the data in the form of dictionary. 
+            return {
+                'PDFFilename': os.path.basename(pdf_path), # Include the PDF filename
+                'Category': category,
+                'Skills': skills,
+                'Education': education,
+            }
+    # Create an exception and return None in that case. 
+    except Exception as e:
+        print(f"Error extracting details from {pdf_path}: {str(e)}")
+        return None
+
+# Create a list to store extracted details
+all_details = []
+
+for directory in list_of_categories:
+    # Directory containing PDF CVs
+    pdf_directory = f'archive/data/data/{directory}'
+    # Iterate through PDF files and extract details
+    for filename in os.listdir(pdf_directory):
+        if filename.endswith('.pdf'):
+            pdf_path = os.path.join(pdf_directory, filename)
+            details = extract_details(pdf_path)
+            if details:
+                print(f"Details extracted from {filename}:\n{details}\n")
+                all_details.append(details)
+
+# Save the extracted details in a JSON file
+output_file = 'extracted/extracted_details.json'
+with open(output_file, 'w') as json_file:
+    # Write the json data into a file. 
+    json.dump(all_details, json_file, indent=4)
+
+    # Close the file.
+    json_file.close()
+# Print the output file 
+print(f"Extracted details saved to {output_file}")
+
+
+# %% [markdown]
+# Tokenize and preprocessing
+
+# %%
+# Free GPU memory for Memory optimization. 
+torch.cuda.empty_cache()
+
+# %%
 
 # Check if GPU is available
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
+# Free GPU memory
+torch.cuda.empty_cache()
+
 # Load your CV data from cv_data.json
 data = {}
 with open("job_descriptions/cv_data.json", "r") as file:
+    # Load json data from the file. 
     data = json.load(file)
+    # Close the file. 
+    file.close()
 
-# Extract company names and job descriptions
+# Extract company names and job descriptions. This will hold the companry name along with the job description.
 company_and_job_descriptions = {}
 for item in data:
     company_and_job_descriptions[item['company_name']] = item['job_description']
 
 # Load DistilBERT tokenizer and model on the GPU
 tokenizer = DistilBertTokenizer.from_pretrained("distilbert-base-uncased")
+# Use the distilbert-base-uncased model 
 model = DistilBertModel.from_pretrained("distilbert-base-uncased").to(device)
 
 # Load job descriptions and extracted CV details from JSON
 with open('extracted/extracted_details.json', 'r') as json_file:
+    # Load the json file. 
     cv_details = json.load(json_file)
+    # Close the file. 
+    json_file.close()
 
 # Create a list of job descriptions
 job_descriptions = list(company_and_job_descriptions.values())
@@ -30,7 +181,7 @@ job_descriptions = list(company_and_job_descriptions.values())
 # Initialize a dictionary to store top 5 CVs for each job description
 top_5_cvs = {}
 
-# Tokenize and embed job descriptions
+# Tokenize and embed job descriptions using the tokenizer, model and the list comprehension technique. 
 job_desc_embeddings = [model(**tokenizer(job_desc, return_tensors='pt', padding=True, truncation=True, max_length=512).to(device)).last_hidden_state.mean(dim=1) for job_desc in job_descriptions]
 
 # Initialize a dictionary to store collected CVs for each job description
@@ -40,13 +191,21 @@ collected_cvs = {job_desc: [] for job_desc in job_descriptions}
 for cv in cv_details:
     # Iterate over job descriptions
     for job_desc in job_descriptions:
+
+        '''Use the join method to add categoiry, skills, and education as text data. This will be the raw text to be tokenized representing most of the information of the user. '''
+
         cv_text = f"{cv['Category']} {', '.join(cv['Skills'])} {', '.join(cv['Education'])}"
+
+        # Create embeddings of the raw text processed in the earlier step. The model is made to run on GPU if available. 
+        # Padding is set to true to match the text datas. truncation is set to True to ensuer that the texts lies within a max limit. Max length defines the maximum length of the texts. 
         cv_embedding = model(**tokenizer(cv_text, return_tensors='pt', padding=True, truncation=True, max_length=512).to(device)).last_hidden_state.mean(dim=1)
 
         # Calculate cosine similarity between job descriptions and CVs using PyTorch
         cv_embedding = cv_embedding.squeeze(0)  # Remove the batch dimension
-        job_desc_embedding = job_desc_embeddings[job_descriptions.index(job_desc)].squeeze(0)  # Get the corresponding job description embedding
 
+        job_desc_embedding = job_desc_embeddings[job_descriptions.index(job_desc)].squeeze(0)  # Get the corresponding job description embedding
+        
+        # Perform similarity operation using the cosine similary of PyTorch. Note that I used this instead of the sklearn implementation to run the operation of GPU devices. This will help to perform the operation much faster. 
         similarity = torch.nn.functional.cosine_similarity(job_desc_embedding, cv_embedding, dim=0).item()
 
         # Store the CV and similarity score
@@ -62,10 +221,34 @@ def find_the_key(job_description):
         if value == job_description:
             return key
 
+# %%
 # Print the top 5 CVs for each job description
+
+shortlisted_cvs={}
 for job_desc, cvs in top_5_cvs.items():
+
+    # Call the function to find the company name corresponding to the job description. 
     company = find_the_key(job_desc)
     print(f"Top 5 CVs for '{company}':")
+
+    # List to store all the selected resumes. 
+    list_of_selected_resumes=[]
     for cv, similarity in cvs:
         print(f"CV: {cv}, Similarity Score: {similarity}")
+        list_of_selected_resumes.append(cv)
+    shortlisted_cvs[company]=list_of_selected_resumes
     print()
+
+# %%
+print(shortlisted_cvs)
+
+# %% [markdown]
+# Save the cvs of the final shortlisted candidates
+
+# %%
+with open("shortlisted/shortlisted_cvs.json", "w") as file:
+    json.dump(shortlisted_cvs, file, indent=4)
+    # Close the file. 
+    file.close()
+
+
