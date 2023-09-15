@@ -76,12 +76,13 @@ print(list_of_categories)
 
 
 # Function to extract category, skills, and education from a PDF
-def extract_details(pdf_path):
+def extract_details(pdf_path, category):
+    print(pdf_path)
     # Wrap the code in try catch block to avoid any error. 
     try:
         with pdfplumber.open(pdf_path) as pdf:
             # Initialize variables to store extracted details
-            category = None
+            experience = None
             skills = []
             education = []
 
@@ -90,8 +91,8 @@ def extract_details(pdf_path):
                 text = page.extract_text()
 
                 # Search for patterns in the extracted text
-                if "Category" in text:
-                    category = text.split("Category")[1].strip()
+                if "Experience" in text:
+                    experience = text.split("Experience")[1].strip()
                 if "Skills" in text:
                     skills = [skill.strip() for skill in text.split("Skills")[1].split(",")]
                 if "Education" in text:
@@ -100,6 +101,7 @@ def extract_details(pdf_path):
             return {
                 'PDFFilename': os.path.basename(pdf_path), # Include the PDF filename
                 'Category': category,
+                'Experience': experience,
                 'Skills': skills,
                 'Education': education,
             }
@@ -118,7 +120,7 @@ for directory in list_of_categories:
     for filename in os.listdir(pdf_directory):
         if filename.endswith('.pdf'):
             pdf_path = os.path.join(pdf_directory, filename)
-            details = extract_details(pdf_path)
+            details = extract_details(pdf_path, directory)
             if details:
                 print(f"Details extracted from {filename}:\n{details}\n")
                 all_details.append(details)
@@ -134,9 +136,123 @@ with open(output_file, 'w') as json_file:
 # Print the output file 
 print(f"Extracted details saved to {output_file}")
 
-
 # %% [markdown]
 # Tokenize and preprocessing
+
+# %%
+# The following is the code to produce the json file containing the comapany and the category of the role they are looking for. 
+
+# Check if GPU is available
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+# Free GPU memory
+torch.cuda.empty_cache()
+
+# Load your CV data from cv_data.json
+data = {}
+with open("job_descriptions/cv_data.json", "r") as file:
+    # Load json data from the file. 
+    data = json.load(file)
+    # Close the file. 
+    file.close()
+
+# Extract company names and job descriptions. This will hold the company name along with the job description.
+company_and_job_descriptions = {}
+for item in data:
+    company_and_job_descriptions[item['company_name']] = item['position_title']
+
+# Load DistilBERT tokenizer and model on the GPU
+tokenizer = DistilBertTokenizer.from_pretrained("distilbert-base-uncased")
+# Use the distilbert-base-uncased model 
+model = DistilBertModel.from_pretrained("distilbert-base-uncased").to(device)
+
+# Load job descriptions and extracted CV details from JSON
+with open('extracted/extracted_details.json', 'r') as json_file:
+    # Load the json file. 
+    cv_details = json.load(json_file)
+    # Close the file. 
+    json_file.close()
+categories = []
+for cv in cv_details:
+    categories.append(cv['Category'])
+
+# Convert the list of categories to a set to get unique categories
+unique_categories = list(set(categories))
+
+# Print the unique categories
+print(unique_categories)
+
+# Create a list of job descriptions
+job_descriptions = list(company_and_job_descriptions.values())
+
+
+# Tokenize and embed job descriptions using the tokenizer, model and the list comprehension technique. 
+job_desc_embeddings = [model(**tokenizer(job_desc, return_tensors='pt', padding=True, truncation=True, max_length=512).to(device)).last_hidden_state.mean(dim=1) for job_desc in job_descriptions]
+
+# Initialize a dictionary to store collected CVs for each job description
+collected_cvs = {job_desc: [] for job_desc in job_descriptions}
+
+
+categories = []
+for cv in cv_details:
+    categories.append(cv['Category'])
+
+# Convert the list of categories to a set to get unique categories
+unique_categories = list(set(categories))
+
+# Print the unique categories
+
+
+store={}
+
+# Create a dictionary to store the similarity scores for each CV
+similarities = {}
+
+# Iterate over company names and job descriptions
+for company_name, job_desc in company_and_job_descriptions.items():
+
+    
+    # Calculate embeddings for the job description
+    job_desc_embedding = job_desc_embeddings[job_descriptions.index(job_desc)].squeeze(0)
+
+    # Iterate over CVs
+    for cv in unique_categories:
+        cv_text = f"{cv}"
+
+        # Create embeddings for the CV
+        cv_embedding = model(**tokenizer(cv_text, return_tensors='pt', padding=True, truncation=True, max_length=512).to(device)).last_hidden_state.mean(dim=1)
+        cv_embedding = cv_embedding.squeeze(0)
+
+        # Calculate cosine similarity
+        similarity = torch.nn.functional.cosine_similarity(job_desc_embedding, cv_embedding, dim=0).item()
+
+        # Store the similarity score in the dictionary
+        if company_name not in similarities:
+            similarities[company_name] = {}
+        similarities[company_name][cv] = similarity
+
+# Find the top CV for each job description
+top_matching_cv = {}
+for company_name, similarity_scores in similarities.items():
+    top_cv = max(similarity_scores, key=similarity_scores.get)
+    top_matching_cv[company_name] = (top_cv, similarity_scores[top_cv])
+
+# Print the top matching CV for each job description
+for company_name, (top_cv, similarity) in top_matching_cv.items():
+    # print(f"Company: {company_name}")
+    # print(f"Top Matching CV: {top_cv}")
+    # print(f"Similarity Score: {similarity}")
+    store[company_name]=top_cv
+
+
+print("Companies and the domain they are looking for: {}".format(store))
+
+with open("matches/matched.json", "w") as file:
+    json.dump(store, file)
+    file.close()
+
+# %% [markdown]
+# Tokenize and preprocessing along with the similarity matrix.
 
 # %%
 # Free GPU memory for Memory optimization. 
@@ -158,10 +274,10 @@ with open("job_descriptions/cv_data.json", "r") as file:
     # Close the file. 
     file.close()
 
-# Extract company names and job descriptions. This will hold the companry name along with the job description.
+# Extract company names and job descriptions. This will hold the company name along with the job description.
 company_and_job_descriptions = {}
 for item in data:
-    company_and_job_descriptions[item['company_name']] = item['job_description']
+    company_and_job_descriptions[item['company_name']] = item['model_response']
 
 # Load DistilBERT tokenizer and model on the GPU
 tokenizer = DistilBertTokenizer.from_pretrained("distilbert-base-uncased")
@@ -178,8 +294,6 @@ with open('extracted/extracted_details.json', 'r') as json_file:
 # Create a list of job descriptions
 job_descriptions = list(company_and_job_descriptions.values())
 
-# Initialize a dictionary to store top 5 CVs for each job description
-top_5_cvs = {}
 
 # Tokenize and embed job descriptions using the tokenizer, model and the list comprehension technique. 
 job_desc_embeddings = [model(**tokenizer(job_desc, return_tensors='pt', padding=True, truncation=True, max_length=512).to(device)).last_hidden_state.mean(dim=1) for job_desc in job_descriptions]
@@ -188,13 +302,42 @@ job_desc_embeddings = [model(**tokenizer(job_desc, return_tensors='pt', padding=
 collected_cvs = {job_desc: [] for job_desc in job_descriptions}
 
 # Tokenize and embed CV details
-for cv in cv_details:
+for company_name, job_desc in company_and_job_descriptions.items():
+    def return_selected_cvs(category):
+        selected_cvs = []  # Create an empty list to store selected CV details
+
+        # Load job descriptions and extracted CV details from JSON
+        with open('extracted/extracted_details.json', 'r') as json_file:
+            cv_details = json.load(json_file)
+
+            # Iterate over each CV detail
+            for cv_detail in cv_details:
+                 # Check if the "Category" key has the value of the passed category
+                if cv_detail.get("Category") == category:
+                    selected_cvs.append(cv_detail)  # Add the CV detail to the selected_cvs list
+
+        return selected_cvs
+    
+    # Program to extract the directory to choose 
+
+    comapany_preferred_domain={}
+    with open("matches/matched.json", "r") as file:
+        comapany_preferred_domain=json.load(file)
+        file.close()
+    if(company_name in comapany_preferred_domain):
+        print(f"Company name: {company_name}, {comapany_preferred_domain[company_name]}")
+        domain=comapany_preferred_domain[company_name]
+    
+    cv_details = return_selected_cvs(domain)
+
+
+    
     # Iterate over job descriptions
-    for job_desc in job_descriptions:
+    for cv in cv_details:
 
         '''Use the join method to add categoiry, skills, and education as text data. This will be the raw text to be tokenized representing most of the information of the user. '''
 
-        cv_text = f"{cv['Category']} {', '.join(cv['Skills'])} {', '.join(cv['Education'])}"
+        cv_text = f"{cv['Category']} {cv['Experience']} {', '.join(cv['Skills'])} {', '.join(cv['Education'])}"
 
         # Create embeddings of the raw text processed in the earlier step. The model is made to run on GPU if available. 
         # Padding is set to true to match the text datas. truncation is set to True to ensuer that the texts lies within a max limit. Max length defines the maximum length of the texts. 
@@ -211,9 +354,16 @@ for cv in cv_details:
         # Store the CV and similarity score
         collected_cvs[job_desc].append((cv['PDFFilename'], similarity))
 
-# Sort the collected CVs by similarity score and select the top 5
-for job_desc, cvs in collected_cvs.items():
-    top_5_cvs[job_desc] = sorted(cvs, key=lambda x: x[1], reverse=True)[:5]
+def recommend_top_k_cvs(collected_cvs,k):
+    # Initialize a dictionary to store top 5 CVs for each job description
+    top_k_cvs = {}
+    # Sort the collected CVs by similarity score and select the top 5
+    for job_desc, cvs in collected_cvs.items():
+        top_k_cvs[job_desc] = sorted(cvs, key=lambda x: x[1], reverse=True)[:k]
+   
+    return top_k_cvs
+
+top_k_cvs=recommend_top_k_cvs(collected_cvs,5)
 
 # Function to find the key (company name) for a given job description
 def find_the_key(job_description):
@@ -225,7 +375,7 @@ def find_the_key(job_description):
 # Print the top 5 CVs for each job description
 
 shortlisted_cvs={}
-for job_desc, cvs in top_5_cvs.items():
+for job_desc, cvs in top_k_cvs.items():
 
     # Call the function to find the company name corresponding to the job description. 
     company = find_the_key(job_desc)
@@ -250,5 +400,8 @@ with open("shortlisted/shortlisted_cvs.json", "w") as file:
     json.dump(shortlisted_cvs, file, indent=4)
     # Close the file. 
     file.close()
+
+# %%
+
 
 
