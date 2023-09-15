@@ -2,7 +2,7 @@
 
 The goal of this project is to recommend top 5 CVs based on the job descriptions of the companies. 
 
-The archieve folder contains 
+The archieve folder contains all the pdfs of the candidates. The folder itself contins a folder named data which again contains another folder called data. The child folder contains different other folders each named according to certain domains e.g ENGINEERING, BUSINESS-DEVELOPMENT etc. They contains the pdfs of the respective candidates. 
 
 How to run the application:
 
@@ -31,7 +31,9 @@ pip install -r requirements.txt
 
 Use this activated kernel to run the index.ipynb file. You can run the index.py file alternatively.
 
-To run the index.ipynb file just click on the run all button on the top.
+There are two executable python scripts namely index.ipynb, and index.py files. The index.ipynb file was used for building the primary code structure while the index.py file consists of class based components. The codes and architecture of both are similar. The index.py file is more structural and consists of more reusable components. 
+
+To run the index.ipynb file just click on the run all button on the top of VS code or Jupyter Notebook.
 
 You can also do it through command line.
 
@@ -68,8 +70,13 @@ device = torch.device("cpu")
 
 ✅**For reference**: In my Hexacore Rynzen 5 5600H processor with 4GB RTX 3050 Graphics card and 16 GB RAM, it took approx ~25 min to execute the entire code. It took ~20 min to extract all pdf data. ~2 min to perform the similarity and other preprocessing operations. 
 
+<br/>
+<br/>
+<br/>
+<br/>
 
-MIT License
+
+**MIT License**
 
 ## Copyright (c) 2023 Asif Rahaman
 
