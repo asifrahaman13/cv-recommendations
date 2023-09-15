@@ -7,6 +7,9 @@ import torch
 from transformers import DistilBertTokenizer, DistilBertModel
 import pdfplumber
 
+# %% [markdown]
+# ## Load The Dataset
+
 # %%
 # Load the dataset from the huggin face model. 
 dataset = load_dataset("jacob-hugging-face/job-descriptions")
@@ -14,6 +17,11 @@ dataset = load_dataset("jacob-hugging-face/job-descriptions")
 # %%
 # See the output and the data format of the dataset. The data was in the form of Nested Dictionary.
 print(dataset['train'].to_dict())
+
+# %% [markdown]
+# ## Save The Dataset
+# 
+# The following code fetches the imported features of the dataset and stores the same in json format. 
 
 # %% [markdown]
 # Convert the dictionry data into json format
@@ -52,6 +60,11 @@ with open("job_descriptions/cv_data.json", "w") as file:
     # Its always a good practice to close the file after the operations are done. 
     file.close()
 
+
+# %% [markdown]
+# ## Extract Details From The CVs
+# 
+# The following codes helps to extract meaningful information from the PDFs. This may not be 100% accurate but contains reasonable and meaningful information from the CVS. After the extraction process is complete the data is stored in json format in the extracted_details.json file of the extracted folder. 
 
 # %% [markdown]
 # Perform data extraction from the pdf.
@@ -135,6 +148,17 @@ with open(output_file, 'w') as json_file:
     json_file.close()
 # Print the output file 
 print(f"Extracted details saved to {output_file}")
+
+# %% [markdown]
+# ## Find The Domain For Which Company Is Looking For
+# 
+# A slight varition is done while implementing the solution. Instead of iterating all the CVs for finding the similarity it is better to first determine the category or the domain for which the company is lookin for. For ecample if the company is looking for Web developer then there is no point is processing the CVs that belong to teaching. The idea is to first determine the domain which best suits the role and later find the similarity matrix from only the relevant CVs. This helps to speed up the process by ~5 times as well as improve the accuracy of the algorithm being used. 
+# 
+# The data is stored in json format in the matched.json file. The file contains the company name along with the role for which they are looking for. 
+# 
+# The idea is to find the similarity matrix between the 'job_title' field and the 'Category'. Next the pairs having the heighest similarity score is considered and **only those CVs are selected which belongs to the category later.**
+# 
+# **Note**: This is not 100% accurate.
 
 # %% [markdown]
 # Tokenize and preprocessing
@@ -257,6 +281,11 @@ with open("matches/matched.json", "w") as file:
 # %%
 # Free GPU memory for Memory optimization. 
 torch.cuda.empty_cache()
+
+# %% [markdown]
+# ## Find The Similarity Matrix Between The CVs And Company Description
+# 
+# In the following code we have used the PyTorch to find the cosine similarity matrix between the CVs and company description. Only the relevant CVs are selected for the process. The CVs are sorted as per their similarity matrix. Then the CVs with the heighest similarity is considered. 5 top CVs are selected for each company but the parameter can be changed. 
 
 # %%
 
@@ -391,6 +420,9 @@ for job_desc, cvs in top_k_cvs.items():
 
 # %%
 print(shortlisted_cvs)
+
+# %% [markdown]
+# ## Save The Final Output
 
 # %% [markdown]
 # Save the cvs of the final shortlisted candidates
