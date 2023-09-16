@@ -12,6 +12,12 @@ Fork the repository:
 https://github.com/asifrahaman13/cv-recommendations.git
 ```
 
+
+<br/>
+<br/>
+
+## Run The Scripts
+
 Create a virtual environment. It is not madnatory but highly recommended.✅
 
 ```
@@ -56,6 +62,38 @@ For others:
 cd codes/
 python index.py
 ```
+
+<br/>
+<br/>
+
+## Run Docker Container
+
+If you want to run the docker image then use the following steps:
+
+```
+docker pull asifrdocker/cvrecommendation:tag
+```
+
+Next run the docker container.
+
+```
+docker run asifrdocker/cvrecommendation:tag
+```
+
+Additionally to find whether the container is running you can run the following commands to check the logs:
+
+```
+docker ps
+```
+
+Copy the container id
+
+```
+docker logs -f <container id>
+```
+
+<br/>
+<br/>
 
 ⚠️**Note:**: The code is written utilizing tensors. If your system has GPU Support (at least 4 GB of GPU Memory) then you will get good acceraleration in your computations. However if your device do not have GPU access the program will still run but at much slower rate. This is due to the fact that there is a lot of data and Python will reqauire some time for computations. 🐍 However still it may run out of the GPU memory. In that case please run the code in google colab or comment out the following line:
 
