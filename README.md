@@ -95,7 +95,7 @@ docker logs -f <container id>
 <br/>
 <br/>
 
-⚠️**Note:**: The code is written utilizing tensors. If your system has GPU Support (at least 4 GB of GPU Memory) then you will get good acceraleration in your computations. However if your device do not have GPU access the program will still run but at much slower rate. This is due to the fact that there is a lot of data and Python will reqauire some time for computations. 🐍 However still it may run out of the GPU memory. In that case please run the code in google colab or comment out the following line:
+⚠️**Note:**: The code is written utilizing tensors. If your system has GPU Support (at least 4 GB of GPU Memory) then you will get good acceraleration in your computations. However if your device do not have GPU access the program will still run but at much slower rate. This is due to the fact that there is a lot of data and Python will reqauire some time for computations. If you find any error related to GUP out of memory please close your vs code and then re run the codes. 🐍 However still it may run out of the GPU memory. In that case please run the code in google colab or comment out the following line:
 
 ```
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -106,7 +106,7 @@ Next use the following instead:
 device = torch.device("cpu")
 ```
 
-✅**For reference**: In my Hexacore Rynzen 5 5600H processor with 4GB RTX 3050 Graphics card and 16 GB RAM, it took approx ~25 min to execute the entire code. It took ~20 min to extract all pdf data. ~2 min to perform the similarity and other preprocessing operations. 
+✅**For reference**: In my Hexacore Rynzen 5 5600H processor with 4GB RTX 3050 Graphics card and 16 GB RAM, it took approx ~5 min to execute the entire code. It took ~3 min to extract all pdf data. ~2 min to perform the similarity and other preprocessing operations. 
 
 <br/>
 <br/>
@@ -123,13 +123,16 @@ device = torch.device("cpu")
 <br/>
 <br/>
 
-Challenges face:
+## Challenges face:
 
 The most difficult challenge faced was based on the time of execution.
 I used the following techique to solve the problem:
 - Removed the CV directories to the archieve folder removing the intermediate folders.
 - Used parallel processing utilizing all the CPU units available. This helped to complete the execution time to nearly ~ 5 minute from ~ 26 minutes. About ~ 5 times more efficient. 🔥🔥
 
+<br/>
+<br/>
+<br/>
 
 **MIT License**
 
