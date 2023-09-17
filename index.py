@@ -1,10 +1,11 @@
 # Import all the necessary libraries and packages in the code.
-import os
 import json
-import torch
+import os
 import pdfplumber
+import torch
 from datasets import load_dataset
-from transformers import DistilBertTokenizer, DistilBertModel
+from transformers import DistilBertModel, DistilBertTokenizer
+from concurrent.futures import ProcessPoolExecutor
 
 # Check if GPU is available
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -22,22 +23,23 @@ class DeviceInteractions:
 
 # Create class for the Company Fields.
 class CompanyFields:
-    def __init__(self):
+    def __init__(self, limit):
         self.dataset = load_dataset("jacob-hugging-face/job-descriptions")
         company_fields = list(self.dataset["train"].to_dict().keys())
         self.company_fields = company_fields
+        self.limit = limit
 
     def get_company_fields(self):
         return self.company_fields
 
-    def transform_to_horizontal(self, data, fields, limit=None):
+    def transform_to_horizontal(self, data, fields):
         # Initialzie list to hold the dataq.
         horizontal_data = []
 
         # Use teh enumerate method to get the incdex as well as the item.
         for idx, item in enumerate(data):
             # Break the loop if it crosses the limit.
-            if limit is not None and idx >= limit:
+            if self.limit is not None and idx >= self.limit:
                 break
                 # Append the items into the dictionary.
             horizontal_item = {field: item[field] for field in fields}
@@ -51,38 +53,51 @@ class CompanyFields:
     def convert_to_json_format(self):
         # Transform the data to horizontal format
         self.horizontal_data = self.transform_to_horizontal(
-            self.dataset["train"], self.get_company_fields(), limit=15
+            self.dataset["train"], self.get_company_fields()
         )
         return self.horizontal_data
 
     # Save the job description data in json format.
     def save_job_description_data(self):
-        # Saving the horizontal data to a JSON file
-        with open("job_descriptions/cv_data.json", "w") as file:
-            # Dump the json data into a file.
-            json.dump(self.horizontal_data, file)
-            # Its always a good practice to close the file after the operations are done.
-            file.close()
+        # Define the path where the job description data will be saved.
+
+        folder_path = "job_descriptions"
+
+        # Create the folder if it does not exist.
+        if os.path.exists(folder_path) == False:
+            os.makedirs(folder_path)
+
+        # Wrap the code in try except block.
+        try:
+            # Saving the horizontal data to a JSON file
+            with open("job_descriptions/cv_data.json", "w") as file:
+                # Dump the json data into a file.
+                json.dump(self.horizontal_data, file)
+                # Its always a good practice to close the file after the operations are done.
+                file.close()
+
+        except Exception as e:
+            print("The following exception occured: {}".format(e))
 
 
 class CvDataExtraction:
+
     """Extract Details From The CVs. The following codes helps to extract meaningful information from the PDFs. This may not be 100% accurate but contains reasonable and meaningful information from the CVS. After the extraction process is complete the data is stored in json format in the extracted_details.json file of the extracted folder."""
 
     def __init__(self, PATH):
         self.PATH = PATH
 
     def extract_details(self, pdf_path, category):
+        print(pdf_path, "\n")
         # Function to extract category, skills, and education from a PDF
-        print(pdf_path)
-        # Wrap the code in try catch block to avoid any error.
         try:
             with pdfplumber.open(pdf_path) as pdf:
-                # Initialize variables to store extracted details
                 experience = None
                 skills = []
                 education = []
 
                 # Iterate through pages in the PDF
+
                 for page in pdf.pages:
                     text = page.extract_text()
 
@@ -98,7 +113,7 @@ class CvDataExtraction:
                         education = [
                             edu.strip() for edu in text.split("Education")[1].split(";")
                         ]
-                    # Return the data in the form of dictionary.
+                # Return the data in the form of dictionary.
                 return {
                     "PDFFilename": os.path.basename(
                         pdf_path
@@ -108,7 +123,7 @@ class CvDataExtraction:
                     "Skills": skills,
                     "Education": education,
                 }
-            # Create an exception and return None in that case.
+        # Create an exception and return None in that case.
         except Exception as e:
             print(f"Error extracting details from {pdf_path}: {str(e)}")
             return None
@@ -116,56 +131,84 @@ class CvDataExtraction:
     def extract_details_from_cv(self):
         PATH = self.PATH
         # Extract all the directories under the mentioned path using list comprehension method.
+
         items = os.listdir(PATH)
         directories = [
             item for item in items if os.path.isdir(os.path.join(PATH, item))
         ]
 
-        print("Directories in the path:")
+        print("Directories in the path:\n")
 
         # Initialize a list which will hold the list of all the categories (basically the names of the directories)
+
         list_of_categories = []
 
         for directory in directories:
             list_of_categories.append(directory)
-            # print(directory)
         print(list_of_categories)
 
         # Create a list to store extracted details
+
         all_details = []
 
-        for directory in list_of_categories:
-            # Directory containing PDF CVs
-            pdf_directory = f"archive/data/data/{directory}"
-            # Iterate through PDF files and extract details
-            for filename in os.listdir(pdf_directory):
-                if filename.endswith(".pdf"):
-                    pdf_path = os.path.join(pdf_directory, filename)
-                    details = self.extract_details(pdf_path, directory)
+        # Find the number of CPU units available.
+        num_processors = os.cpu_count()
+
+        # Use all the cores available for parallel processing
+        with ProcessPoolExecutor(max_workers=num_processors) as executor:
+            for directory in list_of_categories:
+                # Iterate over the directories
+                pdf_directory = f"archive/{directory}"
+                pdf_files = [
+                    os.path.join(pdf_directory, filename)
+                    for filename in os.listdir(pdf_directory)
+                    if filename.endswith(".pdf")
+                ]
+
+                for details in executor.map(
+                    self.extract_details, pdf_files, [directory] * len(pdf_files)
+                ):
                     if details:
-                        print(f"Details extracted from {filename}:\n{details}\n")
+                        print(
+                            f"Details extracted from {details['PDFFilename']}:\n{details}\n"
+                        )
                         all_details.append(details)
-
         # Save the extracted details in a JSON file
-        output_file = "extracted/extracted_details.json"
-        with open(output_file, "w") as json_file:
-            # Write the json data into a file.
-            json.dump(all_details, json_file, indent=4)
+        output_folder = "extracted"
 
-            # Close the file.
-            json_file.close()
-        # Print the output file
-        print(f"Extracted details saved to {output_file}")
+        # Create the folder if it does not exist.
+        if not os.path.exists(output_folder):
+            os.makedirs(output_folder)
+
+        output_file = "extracted/extracted_details.json"
+
+        # Wrap the code in try exception block to handle exceptions.
+        try:
+            with open(output_file, "w") as json_file:
+                # Write the json data into a file.
+
+                json.dump(all_details, json_file, indent=4)
+
+                # Print the output file
+
+                print(f"Extracted details saved to {output_file}")
+        except Exception as e:
+            print("The following error occurred: {}".format(e))
 
     def load_job_description_data(self, json_file_path):
         # Load your CV data from cv_data.json
         data = {}
-        with open(f"{json_file_path}", "r") as file:
-            # Load json data from the file.
-            data = json.load(file)
-            # Close the file.
-            file.close()
-        return data
+
+        # Wrap the code in try except block.
+        try:
+            with open(f"{json_file_path}", "r") as file:
+                # Load json data from the file.
+                data = json.load(file)
+                # Close the file.
+                file.close()
+            return data
+        except Exception as e:
+            print("The following occurred: {}".format(e))
 
 
 class CvSeclection:
@@ -195,12 +238,12 @@ class CvSeclection:
     def company_category_matches(self):
         """Find The Domain For Which Company Is Looking For
 
-        # A slight varition is done while implementing the solution. Instead of iterating all the CVs for finding the similarity it is better to first determine the category or the domain for which the company is lookin for. For ecample if the company is looking for Web developer then there is no point is processing the CVs that belong to teaching. The idea is to first determine the domain which best suits the role and later find the similarity matrix from only the relevant CVs. This helps to speed up the process by ~5 times as well as improve the accuracy of the algorithm being used.
+        A slight varition is done while implementing the solution. Instead of iterating all the CVs for finding the similarity it is better to first determine the category or the domain for which the company is lookin for. For ecample if the company is looking for Web developer then there is no point is processing the CVs that belong to teaching. The idea is to first determine the domain which best suits the role and later find the similarity matrix from only the relevant CVs. This helps to speed up the process by ~5 times as well as improve the accuracy of the algorithm being used.
 
-        # The data is stored in json format in the matched.json file. The file contains the company name along with the role for which they are looking for.
+        The data is stored in json format in the matched.json file. The file contains the company name along with the role for which they are looking for.
 
-        # The idea is to find the similarity matrix between the 'job_title' field and the 'Category'. Next the pairs having the heighest similarity score is considered and **only those CVs are selected which belongs to the category later.**
-        # **Note**: This is not 100% accurate."""
+        The idea is to find the similarity matrix between the 'job_title' field and the 'Category'. Next the pairs having the heighest similarity score is considered and **only those CVs are selected which belongs to the category later.**
+        **Note**: This is not 100% accurate."""
 
         # Free GPU memory
         _ = DeviceInteractions.empty_graphics_card()
@@ -216,7 +259,9 @@ class CvSeclection:
         tokenizer = DistilBertTokenizer.from_pretrained("distilbert-base-uncased")
         # Use the distilbert-base-uncased model
         model = DistilBertModel.from_pretrained("distilbert-base-uncased").to(device)
-        cv_details = self.load_job_description_data("extracted/extracted_details.json")
+        extracted_job_details = self.load_job_description_data(
+            "extracted/extracted_details.json"
+        )
 
         # Create a list of job descriptions
         job_descriptions = list(company_and_job_descriptions.values())
@@ -235,11 +280,11 @@ class CvSeclection:
             for job_desc in job_descriptions
         ]
 
-        # Initialize a dictionary to store collected CVs for each job description
+        # Initialize a dictionary to store collected categories for each job description
         _ = {job_desc: [] for job_desc in job_descriptions}
 
         categories = []
-        for cv in cv_details:
+        for cv in extracted_job_details:
             categories.append(cv["Category"])
 
         # Convert the list of categories to a set to get unique categories
@@ -250,7 +295,7 @@ class CvSeclection:
 
         store = {}
 
-        # Create a dictionary to store the similarity scores for each CV
+        # Create a dictionary to store the similarity scores for each Categories
         similarities = {}
 
         # Iterate over company names and job descriptions
@@ -260,50 +305,62 @@ class CvSeclection:
                 job_descriptions.index(job_desc)
             ].squeeze(0)
 
-            # Iterate over CVs
-            for cv in unique_categories:
-                cv_text = f"{cv}"
+            # Iterate over Categories
+            for category in unique_categories:
+                category_text = f"{category}"
 
-                # Create embeddings for the CV
-                cv_embedding = model(
+                # Create embeddings for the Categories
+                category_embedding = model(
                     **tokenizer(
-                        cv_text,
+                        category_text,
                         return_tensors="pt",
                         padding=True,
                         truncation=True,
                         max_length=512,
                     ).to(device)
                 ).last_hidden_state.mean(dim=1)
-                cv_embedding = cv_embedding.squeeze(0)
+                category_embedding = category_embedding.squeeze(0)
 
                 # Calculate cosine similarity
                 similarity = torch.nn.functional.cosine_similarity(
-                    job_desc_embedding, cv_embedding, dim=0
+                    job_desc_embedding, category_embedding, dim=0
                 ).item()
 
                 # Store the similarity score in the dictionary
                 if company_name not in similarities:
                     similarities[company_name] = {}
-                similarities[company_name][cv] = similarity
+                similarities[company_name][category] = similarity
 
-        # Find the top CV for each job description
-        top_matching_cv = {}
+        # Find the top categories for each job description
+        top_matching_category = {}
         for company_name, similarity_scores in similarities.items():
-            top_cv = max(similarity_scores, key=similarity_scores.get)
-            top_matching_cv[company_name] = (top_cv, similarity_scores[top_cv])
+            # Find out the
+            top_domain = max(similarity_scores, key=similarity_scores.get)
+            top_matching_category[company_name] = (
+                top_domain,
+                similarity_scores[top_domain],
+            )
 
-        # Print the top matching CV for each job description
-        for company_name, (top_cv, similarity) in top_matching_cv.items():
-            # print(f"Company: {company_name}")
-            # print(f"Top Matching CV: {top_cv}")
-            # print(f"Similarity Score: {similarity}")
-            store[company_name] = top_cv
+        # Print the top matching categories for each job description
+        for company_name, (top_domain, similarity) in top_matching_category.items():
+            store[company_name] = top_domain
 
         print("Companies and the domain they are looking for: {}".format(store))
 
-        with open("matches/matched.json", "w") as file:
-            json.dump(store, file)
-            file.close()
+        # Define the output folder where to store the results.
+        output_folder = "matches"
+
+        # Create the folder if it does not exist.
+        if os.path.exists(output_folder) == False:
+            os.makedirs(output_folder)
+        try:
+            # Open the file.
+            with open("matches/matched.json", "w") as file:
+                json.dump(store, file)
+                # Close the file.
+                file.close()
+        except Exception as e:
+            print("The following error occured: {}".format(e))
 
     def domain_preference(self, company_name):
         comapany_preferred_domain = {}
@@ -451,17 +508,26 @@ class CvSeclection:
         return (company_and_job_descriptions, collected_cvs)
 
     def save_shortlisted_cvs(self, shortlisted_cvs):
-        # Save the cvs of the final shortlisted candidates
-        with open("shortlisted/shortlisted_cvs.json", "w") as file:
-            json.dump(shortlisted_cvs, file, indent=4)
-            # Close the file.
-            file.close()
+        output_folder = "shortlisted"
+        # Create the folder if it does not exist.
+        if os.path.exists(output_folder) == False:
+            os.makedirs(output_folder)
+
+        # Handle the exception
+        try:
+            # Save the cvs of the final shortlisted candidates
+            with open("shortlisted/shortlisted_cvs.json", "w") as file:
+                json.dump(shortlisted_cvs, file, indent=4)
+                # Close the file.
+                file.close()
+        except Exception as e:
+            print("The following exception occured: {}".format(e))
 
 
 def main():
     # Specify the fields you want to include in the horizontal format
 
-    company_fields = CompanyFields()
+    company_fields = CompanyFields(limit=15)
 
     _ = company_fields.get_company_fields()
 
@@ -471,7 +537,7 @@ def main():
     _ = company_fields.save_job_description_data()
 
     # Perform data extraction from the pdf.
-    PATH = "archive/data/data"
+    PATH = "archive"
 
     cv_details = CvDataExtraction(PATH)
 
@@ -490,7 +556,7 @@ def main():
 
     top_k_cvs = company_category.recommend_top_k_cvs(collected_cvs)
 
-    # Print the top 5 CVs for each job description
+    # Print the top k CVs for each job description
 
     shortlisted_cvs = company_category.shortlisted_candidates(
         company_and_job_descriptions, top_k_cvs
@@ -499,6 +565,9 @@ def main():
     # Call the function to save the shortlisted cvs.
 
     company_category.save_shortlisted_cvs(shortlisted_cvs)
+
+    # After all the exectution empty the GPU device.
+    _ = DeviceInteractions.empty_graphics_card()
 
 
 # Call the driver code of tha program.

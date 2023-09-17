@@ -9,7 +9,7 @@ How to run the application:
 Fork the repository:
 
 ```
-https://github.com/asifrahaman13/cv-recommendations.git
+git clone https://github.com/asifrahaman13/cv-recommendations.git
 ```
 
 
@@ -112,6 +112,23 @@ device = torch.device("cpu")
 <br/>
 <br/>
 <br/>
+
+## Approach:
+
+- First I extracted all the required information fro the job description as well as the CV data.
+- Next I tried to find the domain for which the companies are looking for using simialrity score. Similarity score is calculated between the job title of the company job description and the available catefories of the CVs. Only the CVs from the relevant categories are selected. 
+- Next I used cosine similarity score between the job description and the CV data. The CVs are ranked accordingly. 
+
+<br/>
+<br/>
+<br/>
+
+Challenges face:
+
+The most difficult challenge faced was based on the time of execution.
+I used the following techique to solve the problem:
+- Removed the CV directories to the archieve folder removing the intermediate folders.
+- Used parallel processing utilizing all the CPU units available. This helped to complete the execution time to nearly ~ 5 minute from ~ 26 minutes. About ~ 5 times more efficient. 🔥🔥
 
 
 **MIT License**
